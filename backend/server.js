@@ -7,6 +7,7 @@ const cors = require("cors");
 const multer = require("multer");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
 
 const mongoose = require("mongoose");
 const cloudinary = require("cloudinary").v2;
@@ -16,6 +17,7 @@ const cloudinaryStorage = require("multer-storage-cloudinary");
 const User = require("./models/user");
 const Member = require("./models/member");
 const Donation = require("./models/donation");
+const Otp = require("./models/otp");
 
 const app = express();
 
@@ -64,13 +66,28 @@ const storage = cloudinaryStorage({
 
 const upload = multer({ storage });
 
+/* ================== SMTP ================== */
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: process.env.SMTP_PORT,
+  secure: false,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
+// Optional but helpful
+transporter.verify((err) => {
+  if (err) console.error("❌ SMTP error:", err.message);
+  else console.log("✅ SMTP ready");
+});
+
 /* ================== TOP ADMIN AUTO CREATE ================== */
 async function createTopAdmin() {
   if (!process.env.TOP_ADMIN_EMAIL || !process.env.TOP_ADMIN_PASSWORD) return;
 
-  const exists = await User.findOne({
-    email: process.env.TOP_ADMIN_EMAIL,
-  });
+  const exists = await User.findOne({ email: process.env.TOP_ADMIN_EMAIL });
 
   if (!exists) {
     const hash = await bcrypt.hash(process.env.TOP_ADMIN_PASSWORD, 10);
@@ -132,114 +149,79 @@ app.post("/api/auth/login", async (req, res) => {
   res.json({ token, user });
 });
 
+/* ================== EMAIL OTP ================== */
+app.post("/api/auth/request-verify", authMiddleware, async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  // already verified → no need OTP
+  if (user.emailVerified) {
+    return res.json({ ok: true, alreadyVerified: true });
+  }
+
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+  await Otp.deleteMany({ user_id: user._id, type: "email" });
+
+  await Otp.create({
+    user_id: user._id,
+    code,
+    type: "email",
+    target: user.email,
+  });
+
+  await transporter.sendMail({
+    from: `"BBC" <${process.env.SMTP_USER}>`,
+    to: user.email,
+    subject: "Email Verification OTP",
+    text: `Your OTP is ${code}. Valid for 5 minutes.`,
+  });
+
+  res.json({ ok: true });
+});
+
+app.post("/api/auth/verify-otp", authMiddleware, async (req, res) => {
+  const { code } = req.body;
+
+  const otp = await Otp.findOne({
+    user_id: req.user.id,
+    code,
+    type: "email",
+  });
+
+  if (!otp) return res.status(400).json({ error: "Invalid OTP" });
+
+  const diff = Date.now() - otp.createdAt.getTime();
+  if (diff > 5 * 60 * 1000) {
+    await otp.deleteOne();
+    return res.status(400).json({ error: "OTP expired" });
+  }
+
+  // ✅ MARK EMAIL VERIFIED (REQUIRED FIX)
+  await User.findByIdAndUpdate(req.user.id, {
+    emailVerified: true,
+  });
+
+  await otp.deleteOne();
+  res.json({ ok: true, verified: true });
+});
+
 /* ================== MEMBERS ================== */
 app.get("/api/members", async (req, res) => {
   const rows = await Member.find().sort({ role: 1, name: 1 });
   res.json({ rows });
 });
 
-app.post(
-  "/api/members/add",
-  authMiddleware,
-  upload.single("photo"),
-  async (req, res) => {
-    if (req.user.role !== "top-admin")
-      return res.status(403).json({ error: "Top admin only" });
-
-    const member = await Member.create({
-      name: req.body.name,
-      role: req.body.role === "admin" ? "admin" : "member",
-      phone: req.body.phone,
-      image: req.file?.path,
-      facebook: req.body.facebook,
-      instagram: req.body.instagram,
-      whatsapp: req.body.whatsapp,
-      category: req.body.category,
-    });
-
-    res.json({ ok: true, member });
-  }
-);
-
-app.post(
-  "/api/members/edit",
-  authMiddleware,
-  upload.single("photo"),
-  async (req, res) => {
-    if (req.user.role !== "top-admin")
-      return res.status(403).json({ error: "Top admin only" });
-
-    await Member.findByIdAndUpdate(req.body.id, {
-      name: req.body.name,
-      role: req.body.role,
-      phone: req.body.phone,
-      image: req.file?.path || req.body.image,
-      facebook: req.body.facebook,
-      instagram: req.body.instagram,
-      whatsapp: req.body.whatsapp,
-      category: req.body.category,
-    });
-
-    res.json({ ok: true });
-  }
-);
-
-app.post("/api/members/delete", authMiddleware, async (req, res) => {
+/* ================== ADMIN / TOP ADMIN ================== */
+app.get("/api/admin/all-users", authMiddleware, async (req, res) => {
   if (req.user.role !== "top-admin")
     return res.status(403).json({ error: "Top admin only" });
-
-  await Member.findByIdAndDelete(req.body.id);
-  res.json({ ok: true });
-});
-
-/* ================== DONATIONS ================== */
-app.post(
-  "/api/chanda/submit",
-  upload.single("screenshot"),
-  async (req, res) => {
-    const donation = await Donation.create({
-      amount: req.body.amount,
-      donor_names: req.body.donor_names,
-      screenshot: req.file?.path,
-      category: req.body.category,
-      payment_mode: "Online",
-    });
-
-    res.json({ ok: true, donation });
-  }
-);
-
-/* ================== ADMIN / TOP ADMIN ================== */
-
-// 🔹 GET ALL USERS (TOP ADMIN PANEL ONLY)
-app.get("/api/admin/all-users", authMiddleware, async (req, res) => {
-  if (req.user.role !== "top-admin") {
-    return res.status(403).json({ error: "Top admin only" });
-  }
 
   const users = await User.find()
     .select("-password")
     .sort({ createdAt: -1 });
 
   res.json({ users });
-});
-
-// 🔹 PROMOTE USER (TOP ADMIN)
-app.post("/api/admin/promote", authMiddleware, async (req, res) => {
-  if (req.user.role !== "top-admin")
-    return res.status(403).json({ error: "Top admin only" });
-
-  await User.updateOne({ email: req.body.email }, { role: req.body.role });
-  res.json({ ok: true });
-});
-
-// 🔹 VIEW DONATIONS (ADMIN + TOP ADMIN)
-app.get("/api/admin/donations", authMiddleware, async (req, res) => {
-  if (!["admin", "top-admin"].includes(req.user.role))
-    return res.status(403).json({ error: "Forbidden" });
-
-  const donations = await Donation.find().sort({ createdAt: -1 });
-  res.json({ donations });
 });
 
 /* ================== HEALTH ================== */
