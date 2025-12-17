@@ -7,7 +7,8 @@ const cors = require("cors");
 const multer = require("multer");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const mongoose = require("mongoose");
 const cloudinary = require("cloudinary").v2;
@@ -79,25 +80,6 @@ const storage = cloudinaryStorage({
 });
 
 const upload = multer({ storage });
-
-/* ================== SMTP (FIXED) ================== */
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT),
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false,
-  },
-});
-
-transporter.verify((err) => {
-  if (err) console.error("❌ SMTP error:", err.message);
-  else console.log("✅ SMTP ready");
-});
 
 /* ================== TOP ADMIN AUTO CREATE ================== */
 async function createTopAdmin() {
@@ -185,11 +167,11 @@ app.post("/api/auth/request-verify", authMiddleware, async (req, res) => {
     target: user.email,
   });
 
-  await transporter.sendMail({
-    from: `"BBC" <${process.env.SMTP_USER}>`,
+  await resend.emails.send({
+    from: "BBC <onboarding@resend.dev>",
     to: user.email,
     subject: "Email Verification OTP",
-    text: `Your OTP is ${code}. Valid for 5 minutes.`,
+    html: `<h2>Your OTP is ${code}</h2><p>Valid for 5 minutes.</p>`,
   });
 
   res.json({ ok: true });
@@ -218,24 +200,6 @@ app.post("/api/auth/verify-otp", authMiddleware, async (req, res) => {
 
   await otp.deleteOne();
   res.json({ ok: true, verified: true });
-});
-
-/* ================== MEMBERS ================== */
-app.get("/api/members", async (req, res) => {
-  const rows = await Member.find().sort({ role: 1, name: 1 });
-  res.json({ rows });
-});
-
-/* ================== ADMIN ================== */
-app.get("/api/admin/all-users", authMiddleware, async (req, res) => {
-  if (req.user.role !== "top-admin")
-    return res.status(403).json({ error: "Top admin only" });
-
-  const users = await User.find()
-    .select("-password")
-    .sort({ createdAt: -1 });
-
-  res.json({ users });
 });
 
 /* ================== HEALTH ================== */
