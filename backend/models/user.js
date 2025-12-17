@@ -7,6 +7,9 @@ const UserSchema = new mongoose.Schema(
     password: String,
     phone: String,
     role: { type: String, default: "user" },
+
+    // ✅ REQUIRED FOR OTP SYSTEM
+    emailVerified: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
