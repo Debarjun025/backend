@@ -21,7 +21,7 @@ const Otp = require("./models/otp");
 
 const app = express();
 
-/* ================== CORS (FIXED) ================== */
+/* ================== CORS ================== */
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
@@ -32,16 +32,13 @@ app.use(
   cors({
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+      if (allowedOrigins.includes(origin)) return callback(null, true);
       return callback(new Error("CORS not allowed"));
     },
     credentials: true,
   })
 );
 
-// Handle preflight
 app.options("*", cors());
 
 /* ================== BASIC SETUP ================== */
@@ -83,14 +80,17 @@ const storage = cloudinaryStorage({
 
 const upload = multer({ storage });
 
-/* ================== SMTP ================== */
+/* ================== SMTP (FIXED) ================== */
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: process.env.SMTP_PORT,
+  port: Number(process.env.SMTP_PORT),
   secure: false,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
+  },
+  tls: {
+    rejectUnauthorized: false,
   },
 });
 
