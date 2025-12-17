@@ -1,15 +1,17 @@
 const mongoose = require("mongoose");
 
-const memberSchema = new mongoose.Schema({
-  name: String,
-  role: String, // Admin / Member
-  phone: String,
-  image_url: String,
-  image_public_id: String,
-  facebook: String,
-  instagram: String,
-  whatsapp: String,
-  category: String
-}, { timestamps: true });
+const MemberSchema = new mongoose.Schema(
+  {
+    name: String,
+    role: { type: String, enum: ["admin", "member"], default: "member" },
+    phone: String,
+    image: String, // Cloudinary URL
+    facebook: String,
+    instagram: String,
+    whatsapp: String,
+    category: String,
+  },
+  { timestamps: true }
+);
 
-module.exports = mongoose.model("Member", memberSchema);
+module.exports = mongoose.model("Member", MemberSchema);
