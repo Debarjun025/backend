@@ -21,13 +21,30 @@ const Otp = require("./models/otp");
 
 const app = express();
 
-/* ================== BASIC SETUP ================== */
+/* ================== CORS (FIXED) ================== */
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "https://vivekanandaboysclub2010.vercel.app",
+];
+
 app.use(
   cors({
-    origin: "*",
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("CORS not allowed"));
+    },
     credentials: true,
   })
 );
+
+// Handle preflight
+app.options("*", cors());
+
+/* ================== BASIC SETUP ================== */
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -77,7 +94,6 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Optional but helpful
 transporter.verify((err) => {
   if (err) console.error("❌ SMTP error:", err.message);
   else console.log("✅ SMTP ready");
@@ -154,7 +170,6 @@ app.post("/api/auth/request-verify", authMiddleware, async (req, res) => {
   const user = await User.findById(req.user.id);
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  // already verified → no need OTP
   if (user.emailVerified) {
     return res.json({ ok: true, alreadyVerified: true });
   }
@@ -197,7 +212,6 @@ app.post("/api/auth/verify-otp", authMiddleware, async (req, res) => {
     return res.status(400).json({ error: "OTP expired" });
   }
 
-  // ✅ MARK EMAIL VERIFIED (REQUIRED FIX)
   await User.findByIdAndUpdate(req.user.id, {
     emailVerified: true,
   });
@@ -212,7 +226,7 @@ app.get("/api/members", async (req, res) => {
   res.json({ rows });
 });
 
-/* ================== ADMIN / TOP ADMIN ================== */
+/* ================== ADMIN ================== */
 app.get("/api/admin/all-users", authMiddleware, async (req, res) => {
   if (req.user.role !== "top-admin")
     return res.status(403).json({ error: "Top admin only" });
