@@ -12,7 +12,6 @@ const mongoose = require("mongoose");
 const cloudinary = require("cloudinary").v2;
 const cloudinaryStorage = require("multer-storage-cloudinary");
 
-
 // ====== MODELS ======
 const User = require("./models/user");
 const Member = require("./models/member");
@@ -21,7 +20,12 @@ const Donation = require("./models/donation");
 const app = express();
 
 /* ================== BASIC SETUP ================== */
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -140,7 +144,7 @@ app.post(
   upload.single("photo"),
   async (req, res) => {
     if (req.user.role !== "top-admin")
-      return res.status(403).json({ error: "Forbidden" });
+      return res.status(403).json({ error: "Top admin only" });
 
     const member = await Member.create({
       name: req.body.name,
@@ -163,7 +167,7 @@ app.post(
   upload.single("photo"),
   async (req, res) => {
     if (req.user.role !== "top-admin")
-      return res.status(403).json({ error: "Forbidden" });
+      return res.status(403).json({ error: "Top admin only" });
 
     await Member.findByIdAndUpdate(req.body.id, {
       name: req.body.name,
@@ -182,7 +186,7 @@ app.post(
 
 app.post("/api/members/delete", authMiddleware, async (req, res) => {
   if (req.user.role !== "top-admin")
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Top admin only" });
 
   await Member.findByIdAndDelete(req.body.id);
   res.json({ ok: true });
@@ -205,15 +209,31 @@ app.post(
   }
 );
 
-/* ================== ADMIN ================== */
+/* ================== ADMIN / TOP ADMIN ================== */
+
+// 🔹 GET ALL USERS (TOP ADMIN PANEL ONLY)
+app.get("/api/admin/all-users", authMiddleware, async (req, res) => {
+  if (req.user.role !== "top-admin") {
+    return res.status(403).json({ error: "Top admin only" });
+  }
+
+  const users = await User.find()
+    .select("-password")
+    .sort({ createdAt: -1 });
+
+  res.json({ users });
+});
+
+// 🔹 PROMOTE USER (TOP ADMIN)
 app.post("/api/admin/promote", authMiddleware, async (req, res) => {
   if (req.user.role !== "top-admin")
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Top admin only" });
 
   await User.updateOne({ email: req.body.email }, { role: req.body.role });
   res.json({ ok: true });
 });
 
+// 🔹 VIEW DONATIONS (ADMIN + TOP ADMIN)
 app.get("/api/admin/donations", authMiddleware, async (req, res) => {
   if (!["admin", "top-admin"].includes(req.user.role))
     return res.status(403).json({ error: "Forbidden" });
