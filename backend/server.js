@@ -83,7 +83,7 @@ async function createTopAdmin() {
       role: "top-admin",
       emailVerified: true,
     });
-    console.log("Top admin created");
+    console.log("✅ Top admin created");
   }
 }
 createTopAdmin();
@@ -123,6 +123,9 @@ app.post("/api/auth/login", async (req, res) => {
   const user = await User.findOne({ email: req.body.email });
   if (!user) return res.status(400).json({ error: "Invalid credentials" });
 
+  if (user.banned)
+    return res.status(403).json({ error: "Account is banned" });
+
   const ok = await bcrypt.compare(req.body.password, user.password);
   if (!ok) return res.status(400).json({ error: "Invalid credentials" });
 
@@ -153,7 +156,31 @@ app.post("/api/admin/verify-user", authMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
-// RESET PASSWORD
+// PROMOTE / DEMOTE
+app.post("/api/admin/change-role", authMiddleware, async (req, res) => {
+  if (req.user.role !== "top-admin")
+    return res.status(403).json({ error: "Top admin only" });
+
+  const { id, role } = req.body;
+
+  if (!["user", "admin"].includes(role))
+    return res.status(400).json({ error: "Invalid role" });
+
+  await User.findByIdAndUpdate(id, { role });
+  res.json({ ok: true });
+});
+
+// BAN / UNBAN USER
+app.post("/api/admin/toggle-ban", authMiddleware, async (req, res) => {
+  if (req.user.role !== "top-admin")
+    return res.status(403).json({ error: "Top admin only" });
+
+  const { id, banned } = req.body;
+  await User.findByIdAndUpdate(id, { banned });
+  res.json({ ok: true });
+});
+
+// RESET PASSWORD BY TOP ADMIN
 app.post("/api/admin/reset-password", authMiddleware, async (req, res) => {
   if (req.user.role !== "top-admin")
     return res.status(403).json({ error: "Top admin only" });
@@ -169,4 +196,4 @@ app.get("/api/ping", (req, res) => res.json({ ok: true }));
 
 /* ================== START ================== */
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log("Server running on", PORT));
+app.listen(PORT, () => console.log("🚀 Server running on", PORT));

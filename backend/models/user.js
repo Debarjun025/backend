@@ -8,8 +8,11 @@ const UserSchema = new mongoose.Schema(
     phone: String,
     role: { type: String, default: "user" },
 
-    // ✅ REQUIRED FOR OTP SYSTEM
+    // Manual verification by Top Admin
     emailVerified: { type: Boolean, default: false },
+
+    // NEW: Ban system
+    banned: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
