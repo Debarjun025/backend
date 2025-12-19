@@ -168,6 +168,21 @@ app.post("/api/admin/verify-user", authMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
+/* ================== ADMIN DONATIONS ================== */
+app.get("/api/admin/donations", authMiddleware, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "top-admin") {
+    return res.status(403).json({ error: "Admin access only" });
+  }
+
+  try {
+    const donations = await Donation.find().sort({ createdAt: -1 });
+    res.json({ donations });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch donations" });
+  }
+});
+
+
 /* ================== HEALTH ================== */
 app.get("/api/ping", (req, res) => res.json({ ok: true }));
 
