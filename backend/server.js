@@ -7,8 +7,6 @@ const cors = require("cors");
 const multer = require("multer");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const { Resend } = require("resend");
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 const mongoose = require("mongoose");
 const cloudinary = require("cloudinary").v2;
@@ -18,7 +16,6 @@ const cloudinaryStorage = require("multer-storage-cloudinary");
 const User = require("./models/user");
 const Member = require("./models/member");
 const Donation = require("./models/donation");
-const Otp = require("./models/otp");
 
 const app = express();
 
@@ -94,6 +91,7 @@ async function createTopAdmin() {
       email: process.env.TOP_ADMIN_EMAIL,
       password: hash,
       role: "top-admin",
+      emailVerified: true,
     });
     console.log("Top admin created");
   }
@@ -113,7 +111,7 @@ function authMiddleware(req, res, next) {
   }
 }
 
-/* ================== AUTH ROUTES ================== */
+/* ================== AUTH ================== */
 app.post("/api/auth/register", async (req, res) => {
   const { name, email, password, phone } = req.body;
   const hash = await bcrypt.hash(password, 10);
@@ -147,59 +145,27 @@ app.post("/api/auth/login", async (req, res) => {
   res.json({ token, user });
 });
 
-/* ================== EMAIL OTP ================== */
-app.post("/api/auth/request-verify", authMiddleware, async (req, res) => {
-  const user = await User.findById(req.user.id);
-  if (!user) return res.status(404).json({ error: "User not found" });
+/* ================== ADMIN ================== */
 
-  if (user.emailVerified) {
-    return res.json({ ok: true, alreadyVerified: true });
-  }
+// 🔹 GET ALL USERS (TOP ADMIN ONLY)
+app.get("/api/admin/all-users", authMiddleware, async (req, res) => {
+  if (req.user.role !== "top-admin")
+    return res.status(403).json({ error: "Top admin only" });
 
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-
-  await Otp.deleteMany({ user_id: user._id, type: "email" });
-
-  await Otp.create({
-    user_id: user._id,
-    code,
-    type: "email",
-    target: user.email,
-  });
-
-  await resend.emails.send({
-    from: "BBC <onboarding@resend.dev>",
-    to: user.email,
-    subject: "Email Verification OTP",
-    html: `<h2>Your OTP is ${code}</h2><p>Valid for 5 minutes.</p>`,
-  });
-
-  res.json({ ok: true });
+  const users = await User.find().select("-password").sort({ createdAt: -1 });
+  res.json({ users });
 });
 
-app.post("/api/auth/verify-otp", authMiddleware, async (req, res) => {
-  const { code } = req.body;
+// 🔹 MANUAL VERIFY USER (TOP ADMIN)
+app.post("/api/admin/verify-user", authMiddleware, async (req, res) => {
+  if (req.user.role !== "top-admin")
+    return res.status(403).json({ error: "Top admin only" });
 
-  const otp = await Otp.findOne({
-    user_id: req.user.id,
-    code,
-    type: "email",
-  });
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: "User ID required" });
 
-  if (!otp) return res.status(400).json({ error: "Invalid OTP" });
-
-  const diff = Date.now() - otp.createdAt.getTime();
-  if (diff > 5 * 60 * 1000) {
-    await otp.deleteOne();
-    return res.status(400).json({ error: "OTP expired" });
-  }
-
-  await User.findByIdAndUpdate(req.user.id, {
-    emailVerified: true,
-  });
-
-  await otp.deleteOne();
-  res.json({ ok: true, verified: true });
+  await User.findByIdAndUpdate(userId, { emailVerified: true });
+  res.json({ ok: true });
 });
 
 /* ================== HEALTH ================== */
