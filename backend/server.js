@@ -28,10 +28,9 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error("CORS not allowed"));
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin)) cb(null, true);
+      else cb(new Error("CORS not allowed"));
     },
     credentials: true,
   })
@@ -46,15 +45,8 @@ app.use(express.urlencoded({ extended: true }));
 const JWT_SECRET = process.env.JWT_SECRET || "secret";
 
 /* ================== MONGODB ================== */
-const MONGO_URI = process.env.MONGO_URI;
-
-if (!MONGO_URI) {
-  console.error("❌ MONGO_URI missing in .env");
-  process.exit(1);
-}
-
 mongoose
-  .connect(MONGO_URI)
+  .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => {
     console.error("❌ MongoDB connection failed:", err.message);
@@ -75,7 +67,6 @@ const storage = cloudinaryStorage({
     allowed_formats: ["jpg", "jpeg", "png", "webp"],
   },
 });
-
 const upload = multer({ storage });
 
 /* ================== TOP ADMIN AUTO CREATE ================== */
@@ -83,7 +74,6 @@ async function createTopAdmin() {
   if (!process.env.TOP_ADMIN_EMAIL || !process.env.TOP_ADMIN_PASSWORD) return;
 
   const exists = await User.findOne({ email: process.env.TOP_ADMIN_EMAIL });
-
   if (!exists) {
     const hash = await bcrypt.hash(process.env.TOP_ADMIN_PASSWORD, 10);
     await User.create({
@@ -113,14 +103,13 @@ function authMiddleware(req, res, next) {
 
 /* ================== AUTH ================== */
 app.post("/api/auth/register", async (req, res) => {
-  const { name, email, password, phone } = req.body;
-  const hash = await bcrypt.hash(password, 10);
+  const hash = await bcrypt.hash(req.body.password, 10);
 
   const user = await User.create({
-    name,
-    email,
+    name: req.body.name,
+    email: req.body.email,
     password: hash,
-    phone,
+    phone: req.body.phone,
   });
 
   const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, {
@@ -131,11 +120,10 @@ app.post("/api/auth/register", async (req, res) => {
 });
 
 app.post("/api/auth/login", async (req, res) => {
-  const { email, password } = req.body;
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email: req.body.email });
   if (!user) return res.status(400).json({ error: "Invalid credentials" });
 
-  const ok = await bcrypt.compare(password, user.password);
+  const ok = await bcrypt.compare(req.body.password, user.password);
   if (!ok) return res.status(400).json({ error: "Invalid credentials" });
 
   const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, {
@@ -145,9 +133,9 @@ app.post("/api/auth/login", async (req, res) => {
   res.json({ token, user });
 });
 
-/* ================== ADMIN ================== */
+/* ================== ADMIN (TOP ADMIN ONLY) ================== */
 
-// 🔹 GET ALL USERS (TOP ADMIN ONLY)
+// GET ALL USERS
 app.get("/api/admin/all-users", authMiddleware, async (req, res) => {
   if (req.user.role !== "top-admin")
     return res.status(403).json({ error: "Top admin only" });
@@ -156,32 +144,25 @@ app.get("/api/admin/all-users", authMiddleware, async (req, res) => {
   res.json({ users });
 });
 
-// 🔹 MANUAL VERIFY USER (TOP ADMIN)
+// MANUAL EMAIL VERIFY
 app.post("/api/admin/verify-user", authMiddleware, async (req, res) => {
   if (req.user.role !== "top-admin")
     return res.status(403).json({ error: "Top admin only" });
 
-  const { userId } = req.body;
-  if (!userId) return res.status(400).json({ error: "User ID required" });
-
-  await User.findByIdAndUpdate(userId, { emailVerified: true });
+  await User.findByIdAndUpdate(req.body.id, { emailVerified: true });
   res.json({ ok: true });
 });
 
-/* ================== ADMIN DONATIONS ================== */
-app.get("/api/admin/donations", authMiddleware, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "top-admin") {
-    return res.status(403).json({ error: "Admin access only" });
-  }
+// RESET PASSWORD
+app.post("/api/admin/reset-password", authMiddleware, async (req, res) => {
+  if (req.user.role !== "top-admin")
+    return res.status(403).json({ error: "Top admin only" });
 
-  try {
-    const donations = await Donation.find().sort({ createdAt: -1 });
-    res.json({ donations });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch donations" });
-  }
+  const hash = await bcrypt.hash(req.body.password, 10);
+  await User.findByIdAndUpdate(req.body.id, { password: hash });
+
+  res.json({ ok: true });
 });
-
 
 /* ================== HEALTH ================== */
 app.get("/api/ping", (req, res) => res.json({ ok: true }));
