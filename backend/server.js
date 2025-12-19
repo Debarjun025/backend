@@ -156,6 +156,19 @@ app.post("/api/admin/verify-user", authMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
+// MANUAL PHONE VERIFY
+app.post("/api/admin/verify-phone", authMiddleware, async (req, res) => {
+  if (req.user.role !== "top-admin")
+    return res.status(403).json({ error: "Top admin only" });
+
+  await User.findByIdAndUpdate(req.body.id, {
+    phoneVerified: true,
+  });
+
+  res.json({ ok: true });
+});
+
+
 // PROMOTE / DEMOTE
 app.post("/api/admin/change-role", authMiddleware, async (req, res) => {
   if (req.user.role !== "top-admin")
@@ -190,6 +203,23 @@ app.post("/api/admin/reset-password", authMiddleware, async (req, res) => {
 
   res.json({ ok: true });
 });
+
+// UPDATE PHONE NUMBER (TOP ADMIN)
+app.post("/api/admin/update-phone", authMiddleware, async (req, res) => {
+  if (req.user.role !== "top-admin")
+    return res.status(403).json({ error: "Top admin only" });
+
+  const { id, phone, countryCode } = req.body;
+
+  await User.findByIdAndUpdate(id, {
+    phone,
+    countryCode,
+    phoneVerified: false, // reset verification
+  });
+
+  res.json({ ok: true });
+});
+
 
 /* ================== HEALTH ================== */
 app.get("/api/ping", (req, res) => res.json({ ok: true }));

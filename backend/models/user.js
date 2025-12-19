@@ -5,13 +5,18 @@ const UserSchema = new mongoose.Schema(
     name: String,
     email: { type: String, unique: true, required: true },
     password: String,
+
+    // 📞 PHONE SYSTEM
+    countryCode: { type: String, default: "+91" },
     phone: String,
+    phoneVerified: { type: Boolean, default: false },
+
     role: { type: String, default: "user" },
 
-    // Manual verification by Top Admin
+    // 📧 Manual email verification
     emailVerified: { type: Boolean, default: false },
 
-    // NEW: Ban system
+    // 🚫 Ban system
     banned: { type: Boolean, default: false },
   },
   { timestamps: true }
